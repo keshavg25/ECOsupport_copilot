@@ -1,0 +1,62 @@
+{
+  "RETURN_POLICY": {
+    "section_id": "RETURN_POLICY",
+    "title": "Returns & Refunds",
+    "last_updated": "2026-05-01",
+    "policy_text": "You may return most items within 30 days of delivery for a refund to the original payment method. Items must be unused, in original packaging when possible, and include all accessories. Some items (digital goods, perishable products, and final-sale items) are not eligible. Refund processing typically takes 5-10 business days after the return is received."
+  },
+  "EXCHANGE_POLICY": {
+    "section_id": "EXCHANGE_POLICY",
+    "title": "Exchanges",
+    "last_updated": "2026-05-01",
+    "policy_text": "Exchanges are supported for eligible items within 30 days of delivery when stock is available. If the replacement is unavailable, we will issue a refund after the original item is received."
+  },
+  "DAMAGED_ITEM_POLICY": {
+    "section_id": "DAMAGED_ITEM_POLICY",
+    "title": "Damaged or Defective Items",
+    "last_updated": "2026-05-01",
+    "policy_text": "If your item arrives damaged or defective, contact support within 7 days of delivery with photos of the packaging and the item. We may offer a replacement, repair, or refund based on the product type and availability."
+  },
+  "SHIPPING_POLICY": {
+    "section_id": "SHIPPING_POLICY",
+    "title": "Shipping",
+    "last_updated": "2026-05-01",
+    "policy_text": "Standard shipping typically delivers within 3-7 business days. Expedited options may be available at checkout. Delivery estimates exclude weekends and holidays and may vary by destination and carrier conditions."
+  },
+  "DELIVERY_ISSUES_POLICY": {
+    "section_id": "DELIVERY_ISSUES_POLICY",
+    "title": "Delivery Issues",
+    "last_updated": "2026-05-01",
+    "policy_text": "If tracking shows delivered but you cannot locate the package, check with household members and nearby locations. If still missing, contact support within 3 days so we can investigate with the carrier."
+  },
+  "PAYMENT_POLICY": {
+    "section_id": "PAYMENT_POLICY",
+    "title": "Payments",
+    "last_updated": "2026-05-01",
+    "policy_text": "We accept major credit/debit cards and supported digital wallets as shown at checkout. Charges may appear as pending authorizations until the order ships. If a payment fails, you may need to reattempt or use an alternate method."
+  },
+  "PROMOTIONS_POLICY": {
+    "section_id": "PROMOTIONS_POLICY",
+    "title": "Promotions & Discounts",
+    "last_updated": "2026-05-01",
+    "policy_text": "Promo codes must be applied at checkout and typically cannot be combined unless explicitly stated. Promotions may exclude certain categories and are subject to expiration and availability."
+  },
+  "PRIVACY_POLICY": {
+    "section_id": "PRIVACY_POLICY",
+    "title": "Privacy",
+    "last_updated": "2026-05-01",
+    "policy_text": "We use your information to process orders, provide support, and improve service. We do not sell personal information. You can request deletion or export of account data subject to legal and operational requirements."
+  },
+  "CANCELLATION_POLICY": {
+    "section_id": "CANCELLATION_POLICY",
+    "title": "Order Cancellation",
+    "last_updated": "2026-05-01",
+    "policy_text": "Orders can be canceled before they enter fulfillment. Once fulfillment begins, cancellation may not be possible; you can return eligible items after delivery according to the return policy."
+  },
+  "WARRANTY_POLICY": {
+    "section_id": "WARRANTY_POLICY",
+    "title": "Warranty",
+    "last_updated": "2026-05-01",
+    "policy_text": "Some products include a limited manufacturer warranty. Warranty coverage varies by product. Keep your order confirmation and contact support for warranty claims assistance."
+  }
+}
