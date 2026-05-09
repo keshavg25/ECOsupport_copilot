@@ -4,9 +4,9 @@ import os
 from typing import Any, Dict, List
 
 from sentence_transformers import SentenceTransformer
-from sentence_transformers import losses
-from sentence_transformers.evaluation import InformationRetrievalEvaluator
-from sentence_transformers.readers import InputExample
+from sentence_transformers.sentence_transformer import losses
+from sentence_transformers.sentence_transformer.evaluation import InformationRetrievalEvaluator
+from sentence_transformers.sentence_transformer.readers import InputExample
 from torch.utils.data import DataLoader
 
 
@@ -21,6 +21,17 @@ def _read_jsonl(path: str) -> List[Dict[str, Any]]:
     return rows
 
 
+def _project_root() -> str:
+    # This file lives at src/retriever/train_biencoder.py
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+def _abspath_from_root(p: str) -> str:
+    if os.path.isabs(p):
+        return p
+    return os.path.abspath(os.path.join(_project_root(), p))
+
+
 def _build_ir_eval(examples: List[Dict[str, Any]]) -> InformationRetrievalEvaluator:
     # Build a lightweight IR evaluator from (query -> positive_doc_id) pairs.
     # This uses passage texts as corpus, keyed by doc_id.
@@ -30,7 +41,7 @@ def _build_ir_eval(examples: List[Dict[str, Any]]) -> InformationRetrievalEvalua
 
     # Build corpus from unique doc_ids referenced by positives/negatives.
     # The training jsonl stores doc_ids; we need to resolve them via passages.jsonl.
-    passages = _read_jsonl("data/kb/passages.jsonl")
+    passages = _read_jsonl(_abspath_from_root("data/kb/passages.jsonl"))
     for p in passages:
         corpus[p["doc_id"]] = p["passage_text"]
 
@@ -53,12 +64,20 @@ def main() -> None:
     ap.add_argument("--warmup_ratio", type=float, default=0.1)
     args = ap.parse_args()
 
-    train_rows = _read_jsonl(args.train)
+    train_path = _abspath_from_root(args.train)
+    if not os.path.exists(train_path):
+        raise FileNotFoundError(
+            f"Training file not found: {train_path}\n\n"
+            "You need to generate it first by running notebooks/01_data_prep.ipynb (Section 3.2), "
+            "which writes data/processed/retriever_train.jsonl."
+        )
+
+    train_rows = _read_jsonl(train_path)
     if not train_rows:
-        raise RuntimeError(f"No training rows found at {args.train}")
+        raise RuntimeError(f"No training rows found at {train_path}")
 
     # Resolve positive_doc_id -> passage_text
-    passages = _read_jsonl("data/kb/passages.jsonl")
+    passages = _read_jsonl(_abspath_from_root("data/kb/passages.jsonl"))
     passage_by_id = {p["doc_id"]: p["passage_text"] for p in passages}
 
     train_examples: List[InputExample] = []
@@ -84,7 +103,7 @@ def main() -> None:
         optimizer_params={"lr": args.lr},
         evaluator=evaluator,
         evaluation_steps=max(1000, len(train_dataloader)),
-        output_path=args.out,
+        output_path=_abspath_from_root(args.out),
         save_best_model=True,
         show_progress_bar=True,
     )
@@ -94,7 +113,7 @@ def main() -> None:
     # Save: the trained retriever to models/retriever/ (created by output_path).
 
     # ----------------- QUICK EVAL (reload + evaluator) -----------------
-    tuned = SentenceTransformer(args.out)
+    tuned = SentenceTransformer(_abspath_from_root(args.out))
     score = evaluator(tuned)
     print("IR eval (subset) score:", score)
 
