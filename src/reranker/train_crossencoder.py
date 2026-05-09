@@ -4,6 +4,8 @@ import os
 from typing import Any, Dict, List
 
 from sentence_transformers import CrossEncoder
+from sentence_transformers.readers import InputExample
+from torch.utils.data import DataLoader
 
 
 def _project_root() -> str:
@@ -49,8 +51,14 @@ def main() -> None:
     if not rows:
         raise RuntimeError(f"No training rows found at {train_path}")
 
-    # CrossEncoder expects: list of ([query, passage], label)
-    train_samples = [([r["query"], r["passage"]], float(r["label"])) for r in rows]
+    train_samples = [
+        InputExample(texts=[r["query"], r["passage"]], label=float(r["label"])) for r in rows
+    ]
+    train_dataloader = DataLoader(
+        train_samples,
+        shuffle=True,
+        batch_size=args.batch_size,
+    )
 
     model = CrossEncoder(
         args.base_model,
@@ -63,10 +71,9 @@ def main() -> None:
 
     # ----------------- TRAINING LOOP -----------------
     model.fit(
-        train_dataloader=train_samples,
+        train_dataloader=train_dataloader,
         epochs=args.epochs,
         optimizer_params={"lr": args.lr},
-        batch_size=args.batch_size,
         show_progress_bar=True,
         output_path=out_dir,
     )
