@@ -4,7 +4,7 @@ import os
 from typing import Any, Dict, List
 
 from sentence_transformers import CrossEncoder
-from sentence_transformers.readers import InputExample
+from sentence_transformers.sentence_transformer.readers import InputExample
 from torch.utils.data import DataLoader
 
 
@@ -47,6 +47,12 @@ def main() -> None:
             "Generate it first using the data prep step (Section 3.3) which writes data/processed/reranker_train.jsonl."
         )
 
+    out_dir = _abspath_from_root(args.out)
+    os.makedirs(out_dir, exist_ok=True)
+
+    print(f"[reranker] train_path={train_path}")
+    print(f"[reranker] out_dir={out_dir}")
+
     rows = _read_jsonl(train_path)
     if not rows:
         raise RuntimeError(f"No training rows found at {train_path}")
@@ -66,9 +72,6 @@ def main() -> None:
         max_length=args.max_length,
     )
 
-    out_dir = _abspath_from_root(args.out)
-    os.makedirs(out_dir, exist_ok=True)
-
     # ----------------- TRAINING LOOP -----------------
     model.fit(
         train_dataloader=train_dataloader,
@@ -77,6 +80,10 @@ def main() -> None:
         show_progress_bar=True,
         output_path=out_dir,
     )
+
+    # Some sentence-transformers versions only persist checkpoints when an evaluator
+    # is provided. We explicitly save to guarantee artifacts exist.
+    model.save(out_dir)
 
     # ⏸️ TRAINING CHECKPOINT — Run the above code on Lightning AI before continuing.
     # Expected time: ~10–25 minutes on a single L4 GPU (depends on dataset size).
