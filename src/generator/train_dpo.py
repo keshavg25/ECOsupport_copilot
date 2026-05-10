@@ -147,7 +147,7 @@ def main() -> None:
             # If adapter load fails for ref but succeeded for policy, we still proceed by using base ref.
             pass
 
-    ta_kwargs: Dict[str, Any] = {
+    base_args_kwargs: Dict[str, Any] = {
         "output_dir": out_dir,
         "num_train_epochs": args.epochs,
         "learning_rate": args.lr,
@@ -163,25 +163,45 @@ def main() -> None:
         "optim": "paged_adamw_8bit" if args.load_in_4bit else "adamw_torch",
         "lr_scheduler_type": "cosine",
         "gradient_checkpointing": True,
+        # DPO-specific knobs (some TRL versions store these in DPOConfig instead of trainer kwargs)
+        "beta": args.beta,
+        "max_length": args.max_length,
+        "max_prompt_length": min(512, args.max_length),
     }
-    filtered_ta = _filter_kwargs(TrainingArguments.__init__, ta_kwargs, "TrainingArguments")
-    training_args = TrainingArguments(**filtered_ta)
 
     try:
-        from trl import DPOTrainer
+        from trl import DPOTrainer  # type: ignore
+        try:
+            from trl import DPOConfig  # type: ignore
+
+            filtered_cfg = _filter_kwargs(DPOConfig.__init__, base_args_kwargs, "DPOConfig")
+            training_args = DPOConfig(**filtered_cfg)
+            print("[dpo] using TRL DPOConfig")
+        except Exception:
+            filtered_ta = _filter_kwargs(TrainingArguments.__init__, base_args_kwargs, "TrainingArguments")
+            training_args = TrainingArguments(**filtered_ta)
+            print("[dpo] using Transformers TrainingArguments")
     except Exception as e:
         raise RuntimeError(
             f"TRL DPOTrainer import failed: {e}. Make sure trl is installed in the environment."
         )
+
+    # Compatibility shim: some TRL versions expect these attributes on args.
+    for k, v in {
+        "model_init_kwargs": None,
+        "ref_model_init_kwargs": None,
+        "beta": args.beta,
+        "max_length": args.max_length,
+        "max_prompt_length": min(512, args.max_length),
+    }.items():
+        if not hasattr(training_args, k):
+            setattr(training_args, k, v)
 
     dpo_kwargs: Dict[str, Any] = {
         "model": policy,
         "ref_model": ref_model,
         "args": training_args,
         "train_dataset": ds,
-        "beta": args.beta,
-        "max_length": args.max_length,
-        "max_prompt_length": min(512, args.max_length),
         "tokenizer": tokenizer,
         "processing_class": tokenizer,
     }
