@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import re
+import sys
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -10,6 +11,12 @@ import numpy as np
 
 def _project_root() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+# Ensure `src.*` imports work when executed as a script.
+_ROOT = _project_root()
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 
 def _abspath_from_root(p: str) -> str:
