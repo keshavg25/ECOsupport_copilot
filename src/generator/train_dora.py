@@ -208,15 +208,25 @@ def main() -> None:
 
     training_args = TrainingArguments(**filtered)
 
-    trainer = SFTTrainer(
-        model=model,
-        tokenizer=tokenizer,
-        train_dataset=ds,
-        dataset_text_field="text",
-        max_seq_length=args.max_length,
-        args=training_args,
-        packing=False,
-    )
+    sft_kwargs: Dict[str, Any] = {
+        "model": model,
+        "train_dataset": ds,
+        "args": training_args,
+        "packing": False,
+        # TRL versions differ in naming.
+        "dataset_text_field": "text",
+        "max_seq_length": args.max_length,
+        "max_length": args.max_length,
+        "tokenizer": tokenizer,
+        "processing_class": tokenizer,
+    }
+    allowed_sft = set(inspect.signature(SFTTrainer.__init__).parameters.keys())
+    sft_filtered = {k: v for k, v in sft_kwargs.items() if k in allowed_sft and v is not None}
+    dropped_sft = sorted(set(sft_kwargs.keys()) - set(sft_filtered.keys()))
+    if dropped_sft:
+        print("[dora] SFTTrainer dropped keys:", dropped_sft)
+
+    trainer = SFTTrainer(**sft_filtered)
 
     trainer.train()
 
