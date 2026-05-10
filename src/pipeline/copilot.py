@@ -53,6 +53,20 @@ def _generate(model: Any, tok: Any, prompt: str, max_new_tokens: int) -> str:
     return decoded.strip()
 
 
+def _ensure_doc_citations(answer: str, retrieved_doc_ids: List[str], max_ids: int = 3) -> str:
+    ans = (answer or "").strip()
+    if re.search(r"\[DOC_[0-9]+\]", ans):
+        return ans
+    doc_ids = [d for d in retrieved_doc_ids if isinstance(d, str) and d.startswith("DOC_")]
+    doc_ids = list(dict.fromkeys(doc_ids))[:max_ids]
+    if not doc_ids:
+        return ans
+    sources = " ".join(f"[{d}]" for d in doc_ids)
+    if ans:
+        return f"{ans}\n\nSources: {sources}".strip()
+    return f"Sources: {sources}".strip()
+
+
 @dataclass
 class ToolResult:
     name: str
@@ -187,10 +201,13 @@ class EcoSupportCopilot:
             tool_trace.append(ToolResult(name="SearchKB", args={"query": q, "top_k": k}, output=out))
 
         evidence_lines: List[str] = []
+        retrieved_doc_ids: List[str] = []
         for tr in tool_trace:
             if tr.name == "SearchKB":
                 for p in tr.output.get("passages", []):
                     doc_id = p.get("doc_id")
+                    if doc_id:
+                        retrieved_doc_ids.append(str(doc_id))
                     text = (p.get("text") or "").strip().replace("\n", " ")
                     evidence_lines.append(f"[{doc_id}] {text}")
             elif tr.name == "GetPolicy":
@@ -207,6 +224,7 @@ class EcoSupportCopilot:
             "Assistant:\n"
         )
         answer = _generate(self._gen_model, self._gen_tok, gen_prompt, max_new_tokens=max_new_tokens)
+        answer = _ensure_doc_citations(answer, retrieved_doc_ids)
 
         trace_json = [{"name": tr.name, "args": tr.args, "output": tr.output} for tr in tool_trace]
         return answer, trace_json

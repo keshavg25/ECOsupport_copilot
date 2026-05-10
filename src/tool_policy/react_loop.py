@@ -122,6 +122,20 @@ def _generate(model: Any, tok: Any, prompt: str, max_new_tokens: int = 256) -> s
     return decoded.strip()
 
 
+def _ensure_doc_citations(answer: str, retrieved_doc_ids: List[str], max_ids: int = 3) -> str:
+    ans = (answer or "").strip()
+    if re.search(r"\[DOC_[0-9]+\]", ans):
+        return ans
+    doc_ids = [d for d in retrieved_doc_ids if isinstance(d, str) and d.startswith("DOC_")]
+    doc_ids = list(dict.fromkeys(doc_ids))[:max_ids]
+    if not doc_ids:
+        return ans
+    sources = " ".join(f"[{d}]" for d in doc_ids)
+    if ans:
+        return f"{ans}\n\nSources: {sources}".strip()
+    return f"Sources: {sources}".strip()
+
+
 @dataclass
 class ToolResult:
     name: str
@@ -202,10 +216,13 @@ def main() -> None:
 
     # 3) Build evidence block
     evidence_lines: List[str] = []
+    retrieved_doc_ids: List[str] = []
     for tr in tool_trace:
         if tr.name == "SearchKB":
             for p in tr.output.get("passages", []):
                 doc_id = p.get("doc_id")
+                if doc_id:
+                    retrieved_doc_ids.append(str(doc_id))
                 text = (p.get("text") or "").strip().replace("\n", " ")
                 evidence_lines.append(f"[{doc_id}] {text}")
         elif tr.name == "GetPolicy":
@@ -224,6 +241,7 @@ def main() -> None:
         "Assistant:\n"
     )
     answer = _generate(gen_model, gen_tok, gen_prompt, max_new_tokens=args.max_new_tokens)
+    answer = _ensure_doc_citations(answer, retrieved_doc_ids)
 
     # 5) Emit response + tool trace JSON
     print("\n=== ANSWER ===\n")
