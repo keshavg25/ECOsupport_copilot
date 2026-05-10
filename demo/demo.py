@@ -1,5 +1,16 @@
 import argparse
 import json
+import os
+import sys
+
+
+def _project_root() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+
+_ROOT = _project_root()
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 from src.pipeline.copilot import EcoSupportCopilot
 

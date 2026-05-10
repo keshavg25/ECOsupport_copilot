@@ -1,7 +1,18 @@
 import argparse
 import json
 import os
-from typing import Any, Dict, Iterable, List
+import sys
+from typing import Any, Dict, List
+
+
+def _project_root() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+# Ensure `src.*` imports work when executed as a script.
+_ROOT = _project_root()
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 import pandas as pd
 
