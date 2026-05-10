@@ -1,0 +1,23 @@
+# Models
+models/
+checkpoints/
+
+# HuggingFace
+*.safetensors
+*.bin
+
+# Training states
+optimizer.pt
+scheduler.pt
+trainer_state.json
+
+# FAISS
+*.index
+*.pkl
+
+# Cache
+__pycache__/
+.ipynb_checkpoints/
+
+# Logs
+*.log
