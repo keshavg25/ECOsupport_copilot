@@ -61,30 +61,41 @@ def _load_reranker() -> Any:
     return CrossEncoder(path)
 
 
-def _load_tool_policy_model(base_model: str, adapter_dir: str) -> Tuple[Any, Any]:
+def _is_disabled_adapter(path: Optional[str]) -> bool:
+    if path is None:
+        return True
+    p = str(path).strip().lower()
+    return p in {"", "none", "null", "no", "false"}
+
+
+def _load_tool_policy_model(base_model: str, adapter_dir: Optional[str]) -> Tuple[Any, Any]:
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from peft import PeftModel
 
     tok = AutoTokenizer.from_pretrained(base_model, use_fast=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(base_model, device_map="auto")
-    model = PeftModel.from_pretrained(model, adapter_dir)
+    if not _is_disabled_adapter(adapter_dir):
+        from peft import PeftModel
+
+        model = PeftModel.from_pretrained(model, adapter_dir)
     model.eval()
     return model, tok
 
 
-def _load_generator(base_model: str, adapter_dir: str) -> Tuple[Any, Any]:
+def _load_generator(base_model: str, adapter_dir: Optional[str]) -> Tuple[Any, Any]:
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from peft import PeftModel
 
     tok = AutoTokenizer.from_pretrained(base_model, use_fast=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(base_model, device_map="auto")
-    model = PeftModel.from_pretrained(model, adapter_dir)
+    if not _is_disabled_adapter(adapter_dir):
+        from peft import PeftModel
+
+        model = PeftModel.from_pretrained(model, adapter_dir)
     model.eval()
     return model, tok
 
@@ -148,10 +159,18 @@ def main() -> None:
     ap.add_argument("--question", required=True)
 
     ap.add_argument("--tool_policy_base", default="Qwen/Qwen2.5-0.5B-Instruct")
-    ap.add_argument("--tool_policy_adapter", default="models/tool_policy")
+    ap.add_argument(
+        "--tool_policy_adapter",
+        default="models/tool_policy",
+        help="Adapter path, or 'none' to disable (baseline).",
+    )
 
     ap.add_argument("--generator_base", default="Qwen/Qwen2.5-1.5B-Instruct")
-    ap.add_argument("--generator_adapter", default="models/generator_dpo")
+    ap.add_argument(
+        "--generator_adapter",
+        default="models/generator_dpo",
+        help="Adapter path, or 'none' to disable (baseline).",
+    )
 
     ap.add_argument("--top_k", type=int, default=5)
     ap.add_argument("--max_new_tokens", type=int, default=256)
@@ -165,10 +184,10 @@ def main() -> None:
     encoder = _load_retriever_encoder()
     reranker = _load_reranker()
 
-    tool_policy_adapter = _abspath_from_root(args.tool_policy_adapter)
+    tool_policy_adapter = None if _is_disabled_adapter(args.tool_policy_adapter) else _abspath_from_root(args.tool_policy_adapter)
     tool_model, tool_tok = _load_tool_policy_model(args.tool_policy_base, tool_policy_adapter)
 
-    generator_adapter = _abspath_from_root(args.generator_adapter)
+    generator_adapter = None if _is_disabled_adapter(args.generator_adapter) else _abspath_from_root(args.generator_adapter)
     gen_model, gen_tok = _load_generator(args.generator_base, generator_adapter)
 
     # 1) Decide tool

@@ -35,6 +35,13 @@ def _extract_json(text: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _is_disabled_adapter(path: Optional[str]) -> bool:
+    if path is None:
+        return True
+    p = str(path).strip().lower()
+    return p in {"", "none", "null", "no", "false"}
+
+
 def _generate(model: Any, tok: Any, prompt: str, max_new_tokens: int) -> str:
     import torch
 
@@ -104,7 +111,6 @@ class EcoSupportCopilot:
     def load(self) -> "EcoSupportCopilot":
         from sentence_transformers import CrossEncoder, SentenceTransformer
         from transformers import AutoModelForCausalLM, AutoTokenizer
-        from peft import PeftModel
 
         # KB / policies
         with open(_abspath_from_root("data/kb/policies.json"), "r", encoding="utf-8") as f:
@@ -125,7 +131,12 @@ class EcoSupportCopilot:
         if self._tool_tok.pad_token is None:
             self._tool_tok.pad_token = self._tool_tok.eos_token
         base_tool_model = AutoModelForCausalLM.from_pretrained(self.tool_policy_base, device_map="auto")
-        self._tool_model = PeftModel.from_pretrained(base_tool_model, self.tool_policy_adapter)
+        if _is_disabled_adapter(self.tool_policy_adapter):
+            self._tool_model = base_tool_model
+        else:
+            from peft import PeftModel
+
+            self._tool_model = PeftModel.from_pretrained(base_tool_model, self.tool_policy_adapter)
         self._tool_model.eval()
 
         # Generator
@@ -133,7 +144,12 @@ class EcoSupportCopilot:
         if self._gen_tok.pad_token is None:
             self._gen_tok.pad_token = self._gen_tok.eos_token
         base_gen_model = AutoModelForCausalLM.from_pretrained(self.generator_base, device_map="auto")
-        self._gen_model = PeftModel.from_pretrained(base_gen_model, self.generator_adapter)
+        if _is_disabled_adapter(self.generator_adapter):
+            self._gen_model = base_gen_model
+        else:
+            from peft import PeftModel
+
+            self._gen_model = PeftModel.from_pretrained(base_gen_model, self.generator_adapter)
         self._gen_model.eval()
 
         return self
