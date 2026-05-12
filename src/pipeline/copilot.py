@@ -60,11 +60,13 @@ def _generate(model: Any, tok: Any, prompt: str, max_new_tokens: int) -> str:
     return decoded.strip()
 
 
-def _format_doc_span_citation(doc_id: str, span_start: int, span_end: int) -> str:
+def _format_doc_span_citation(doc_id: str, span_start: int, span_end: int, *, passage_index: int = 0) -> str:
     s = int(span_start or 0)
     e = int(span_end or 0)
     if s <= 0 and e <= 0:
-        return f"[{doc_id}]"
+        # Some KB builds don't carry character spans; fall back to a stable passage reference.
+        p = int(passage_index or 0)
+        return f"[{doc_id}@p{p}]" if p > 0 else f"[{doc_id}]"
     if e < s:
         s, e = e, s
     return f"[{doc_id}@{s}-{e}]"
@@ -77,7 +79,7 @@ def _ensure_doc_citations(answer: str, retrieved_citations: List[str], max_ids: 
     """
 
     ans = (answer or "").strip()
-    if re.search(r"\[DOC_[0-9]+(?:@[0-9]+-[0-9]+)?\]", ans):
+    if re.search(r"\[DOC_[0-9]+(?:@(?:[0-9]+-[0-9]+|p[0-9]+))?\]", ans):
         return ans
     cites = [c for c in retrieved_citations if isinstance(c, str) and c.startswith("[DOC_")]
     cites = list(dict.fromkeys(cites))[:max_ids]
@@ -255,7 +257,7 @@ class EcoSupportCopilot:
         retrieved_citations: List[str] = []
         for tr in tool_trace:
             if tr.name == "SearchKB":
-                for p in tr.output.get("passages", []):
+                for i, p in enumerate(tr.output.get("passages", []), start=1):
                     doc_id = p.get("doc_id")
                     if doc_id:
                         retrieved_citations.append(
@@ -263,12 +265,17 @@ class EcoSupportCopilot:
                                 str(doc_id),
                                 int(p.get("span_start", 0) or 0),
                                 int(p.get("span_end", 0) or 0),
+                                passage_index=i,
                             )
                         )
                     text = (p.get("text") or "").strip().replace("\n", " ")
                     span_start = int(p.get("span_start", 0) or 0)
                     span_end = int(p.get("span_end", 0) or 0)
-                    cite = _format_doc_span_citation(str(doc_id), span_start, span_end) if doc_id else ""
+                    cite = (
+                        _format_doc_span_citation(str(doc_id), span_start, span_end, passage_index=i)
+                        if doc_id
+                        else ""
+                    )
                     evidence_lines.append(f"{cite} {text}".strip())
             elif tr.name == "GetPolicy":
                 evidence_lines.append(f"[POLICY:{tr.args.get('section_id')}] {tr.output.get('policy_text','')}")
@@ -278,7 +285,7 @@ class EcoSupportCopilot:
         evidence = "\n".join(evidence_lines)[:12000]
         gen_prompt = (
             "System:\nYou are EcoSupport-Copilot. Answer using evidence from the KB/policies/tools. "
-            "Always cite evidence as [DOC_123@start-end] (doc id + span). "
+            "Always cite evidence as [DOC_123@start-end] (doc id + span) or [DOC_123@pN] (passage ref). "
             "Policy citations may use [POLICY:section_id]. "
             "If you cannot answer from evidence, escalate.\n\n"
             f"Evidence:\n{evidence}\n\n"

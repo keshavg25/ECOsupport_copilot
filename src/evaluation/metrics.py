@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 from rouge_score import rouge_scorer
 
 
-_CITATION_RE = re.compile(r"\[(DOC_[0-9]+(?:@[0-9]+-[0-9]+)?|POLICY:[^\]]+|TICKET)\]")
+_CITATION_RE = re.compile(r"\[(DOC_[0-9]+(?:@(?:[0-9]+-[0-9]+|p[0-9]+))?|POLICY:[^\]]+|TICKET)\]")
 
 
 def citation_coverage(answer: str) -> Dict[str, Any]:
@@ -68,8 +68,8 @@ def retrieval_overlap(tool_trace: List[Dict[str, Any]], answer: str) -> Dict[str
             if doc_id:
                 retrieved.append(str(doc_id))
 
-    # Accept both [DOC_12] and [DOC_12@start-end] and normalize to doc_id.
-    cited = set(re.findall(r"\[(DOC_[0-9]+)(?:@[0-9]+-[0-9]+)?\]", answer or ""))
+    # Accept [DOC_12], [DOC_12@start-end], [DOC_12@pN] and normalize to doc_id.
+    cited = set(re.findall(r"\[(DOC_[0-9]+)(?:@(?:[0-9]+-[0-9]+|p[0-9]+))?\]", answer or ""))
     retrieved_set = set(retrieved)
 
     if not retrieved_set:
