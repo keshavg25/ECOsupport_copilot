@@ -3,6 +3,7 @@ import sys
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 def _project_root() -> str:
@@ -62,6 +63,88 @@ def _startup() -> None:
 @app.get("/health")
 def health() -> Dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/", response_class=HTMLResponse)
+def ui() -> str:
+        return """<!doctype html>
+<html lang=\"en\">
+    <head>
+        <meta charset=\"utf-8\" />
+        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+        <title>EcoSupport-Copilot</title>
+    </head>
+    <body>
+        <h1>EcoSupport-Copilot</h1>
+
+        <form id=\"chat-form\">
+            <label for=\"question\">Question</label><br />
+            <textarea id=\"question\" rows=\"4\" cols=\"80\" required></textarea><br />
+
+            <label for=\"top_k\">top_k</label>
+            <input id=\"top_k\" type=\"number\" min=\"1\" max=\"20\" value=\"5\" />
+
+            <label for=\"max_new_tokens\">max_new_tokens</label>
+            <input id=\"max_new_tokens\" type=\"number\" min=\"32\" max=\"1024\" value=\"220\" />
+
+            <button id=\"send\" type=\"submit\">Ask</button>
+            <span id=\"status\"></span>
+        </form>
+
+        <h2>Answer</h2>
+        <pre id=\"answer\"></pre>
+
+        <h2>Tool trace</h2>
+        <pre id=\"trace\"></pre>
+
+        <p>API docs: <a href=\"/docs\">/docs</a></p>
+
+        <script>
+            const form = document.getElementById('chat-form');
+            const statusEl = document.getElementById('status');
+            const answerEl = document.getElementById('answer');
+            const traceEl = document.getElementById('trace');
+            const sendBtn = document.getElementById('send');
+
+            function setBusy(isBusy) {
+                sendBtn.disabled = isBusy;
+                statusEl.textContent = isBusy ? 'Thinking…' : '';
+            }
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const question = document.getElementById('question').value;
+                const top_k = parseInt(document.getElementById('top_k').value || '5', 10);
+                const max_new_tokens = parseInt(document.getElementById('max_new_tokens').value || '220', 10);
+
+                answerEl.textContent = '';
+                traceEl.textContent = '';
+                setBusy(true);
+
+                try {
+                    const resp = await fetch('/chat', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({question, top_k, max_new_tokens})
+                    });
+                    const data = await resp.json();
+
+                    if (!resp.ok) {
+                        throw new Error(data?.detail || resp.statusText);
+                    }
+
+                    answerEl.textContent = data.answer || '';
+                    traceEl.textContent = JSON.stringify(data.tool_trace || [], null, 2);
+                } catch (err) {
+                    answerEl.textContent = 'Error: ' + (err?.message || String(err));
+                } finally {
+                    setBusy(false);
+                }
+            });
+        </script>
+    </body>
+</html>"""
 
 
 @app.post("/chat", response_model=ChatResponse)
