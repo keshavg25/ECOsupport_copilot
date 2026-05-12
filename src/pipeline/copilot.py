@@ -91,9 +91,11 @@ class EcoSupportCopilot:
         top_k_default: int = 5,
     ) -> None:
         self.tool_policy_base = tool_policy_base
-        self.tool_policy_adapter = _abspath_from_root(tool_policy_adapter)
         self.generator_base = generator_base
-        self.generator_adapter = _abspath_from_root(generator_adapter)
+
+        # Normalize adapter inputs BEFORE making absolute paths.
+        self.tool_policy_adapter = None if _is_disabled_adapter(tool_policy_adapter) else _abspath_from_root(tool_policy_adapter)
+        self.generator_adapter = None if _is_disabled_adapter(generator_adapter) else _abspath_from_root(generator_adapter)
         self.top_k_default = top_k_default
 
         self._policy_db: Optional[Dict[str, Any]] = None
