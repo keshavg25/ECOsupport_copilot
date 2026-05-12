@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+from fastapi.middleware.cors import CORSMiddleware
 
 def _project_root() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -35,6 +36,14 @@ def _env(name: str, default: str) -> str:
 
 
 app = FastAPI(title="EcoSupport-Copilot", version="0.1")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 _copilot: Optional[EcoSupportCopilot] = None
 
@@ -97,7 +106,7 @@ def ui() -> str:
         <h2>Tool trace</h2>
         <pre id=\"trace\"></pre>
 
-        <p>API docs: <a href=\"/docs\">/docs</a></p>
+        <p>API docs: <a href=\"/docs\">/docs</a></p>    
 
         <script>
             const form = document.getElementById('chat-form');
