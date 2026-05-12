@@ -113,6 +113,16 @@ def _extract_json(text: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _parse_json_arg(s: str) -> Dict[str, Any]:
+    if not s:
+        return {}
+    try:
+        obj = json.loads(s)
+        return obj if isinstance(obj, dict) else {}
+    except Exception:
+        return {}
+
+
 def _generate(model: Any, tok: Any, prompt: str, max_new_tokens: int = 256) -> str:
     import torch
 
@@ -174,6 +184,17 @@ def main() -> None:
 
     ap.add_argument("--top_k", type=int, default=5)
     ap.add_argument("--max_new_tokens", type=int, default=256)
+
+    ap.add_argument(
+        "--force_tool",
+        default="",
+        help="Force tool name (SearchKB, GetPolicy, CreateTicket, None). If set, bypasses tool-policy model.",
+    )
+    ap.add_argument(
+        "--force_tool_args",
+        default="",
+        help='Optional JSON dict for forced tool args. Example: --force_tool_args "{\"query\":\"...\",\"top_k\":5}"',
+    )
     args = ap.parse_args()
 
     # Load resources
@@ -190,14 +211,19 @@ def main() -> None:
     generator_adapter = None if _is_disabled_adapter(args.generator_adapter) else _abspath_from_root(args.generator_adapter)
     gen_model, gen_tok = _load_generator(args.generator_base, generator_adapter)
 
-    # 1) Decide tool
-    tool_prompt = (
-        "Decide one tool call as JSON: {\"name\": string, \"args\": object}. "
-        "Allowed: SearchKB, GetPolicy, CreateTicket, None.\n\n"
-        f"User query: {args.question}\n"
-    )
-    tool_out = _generate(tool_model, tool_tok, tool_prompt, max_new_tokens=128)
-    tool_call = _extract_json(tool_out) or {"name": "SearchKB", "args": {"query": args.question, "top_k": args.top_k}}
+    # 1) Decide tool (or force tool)
+    forced_name = (args.force_tool or "").strip()
+    forced_args = _parse_json_arg(args.force_tool_args)
+    if forced_name:
+        tool_call = {"name": forced_name, "args": forced_args}
+    else:
+        tool_prompt = (
+            "Decide one tool call as JSON: {\"name\": string, \"args\": object}. "
+            "Allowed: SearchKB, GetPolicy, CreateTicket, None.\n\n"
+            f"User query: {args.question}\n"
+        )
+        tool_out = _generate(tool_model, tool_tok, tool_prompt, max_new_tokens=128)
+        tool_call = _extract_json(tool_out) or {"name": "SearchKB", "args": {"query": args.question, "top_k": args.top_k}}
 
     name = tool_call.get("name") or tool_call.get("tool") or "SearchKB"
     call_args = tool_call.get("args") or {}
