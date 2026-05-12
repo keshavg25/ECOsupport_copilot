@@ -60,15 +60,30 @@ def _generate(model: Any, tok: Any, prompt: str, max_new_tokens: int) -> str:
     return decoded.strip()
 
 
-def _ensure_doc_citations(answer: str, retrieved_doc_ids: List[str], max_ids: int = 3) -> str:
+def _format_doc_span_citation(doc_id: str, span_start: int, span_end: int) -> str:
+    s = int(span_start or 0)
+    e = int(span_end or 0)
+    if s <= 0 and e <= 0:
+        return f"[{doc_id}]"
+    if e < s:
+        s, e = e, s
+    return f"[{doc_id}@{s}-{e}]"
+
+
+def _ensure_doc_citations(answer: str, retrieved_citations: List[str], max_ids: int = 3) -> str:
+    """Rubric-like enforcement: ensure final answer includes at least one DOC citation.
+
+    Required format: [DOC_12@123-456] (span is preferred), but we also accept [DOC_12].
+    """
+
     ans = (answer or "").strip()
-    if re.search(r"\[DOC_[0-9]+\]", ans):
+    if re.search(r"\[DOC_[0-9]+(?:@[0-9]+-[0-9]+)?\]", ans):
         return ans
-    doc_ids = [d for d in retrieved_doc_ids if isinstance(d, str) and d.startswith("DOC_")]
-    doc_ids = list(dict.fromkeys(doc_ids))[:max_ids]
-    if not doc_ids:
+    cites = [c for c in retrieved_citations if isinstance(c, str) and c.startswith("[DOC_")]
+    cites = list(dict.fromkeys(cites))[:max_ids]
+    if not cites:
         return ans
-    sources = " ".join(f"[{d}]" for d in doc_ids)
+    sources = " ".join(cites)
     if ans:
         return f"{ans}\n\nSources: {sources}".strip()
     return f"Sources: {sources}".strip()
@@ -170,40 +185,56 @@ class EcoSupportCopilot:
         ):
             raise RuntimeError("EcoSupportCopilot not loaded; call .load() first")
 
-    def answer(self, question: str, *, top_k: Optional[int] = None, max_new_tokens: int = 256) -> Tuple[str, List[Dict[str, Any]]]:
+    def answer(
+        self,
+        question: str,
+        *,
+        top_k: Optional[int] = None,
+        max_new_tokens: int = 256,
+        max_tool_steps: int = 2,
+    ) -> Tuple[str, List[Dict[str, Any]]]:
         self._require_loaded()
 
         from src.tool_policy.tools import CreateTicket, GetPolicy, SearchKB
 
         top_k = int(top_k or self.top_k_default)
 
-        tool_prompt = (
-            "Decide one tool call as JSON: {\"name\": string, \"args\": object}. "
-            "Allowed: SearchKB, GetPolicy, CreateTicket, None.\n\n"
-            f"User query: {question}\n"
-        )
-        tool_out = _generate(self._tool_model, self._tool_tok, tool_prompt, max_new_tokens=128)
-        tool_call = _extract_json(tool_out) or {"name": "SearchKB", "args": {"query": question, "top_k": top_k}}
-
-        name = tool_call.get("name") or tool_call.get("tool") or "SearchKB"
-        call_args = tool_call.get("args") or {}
-
         tool_trace: List[ToolResult] = []
-
-        if name == "None":
-            pass
-        elif name == "GetPolicy":
-            section_id = call_args.get("section_id", "")
-            out = GetPolicy(section_id=section_id, policy_db=self._policy_db)
-            tool_trace.append(ToolResult(name=name, args={"section_id": section_id}, output=out))
-        elif name == "CreateTicket":
-            out = CreateTicket(
-                summary=str(call_args.get("summary", ""))[:240],
-                category=str(call_args.get("category", "support")),
-                severity=str(call_args.get("severity", "medium")),
+        last_tool_json: str = ""
+        for _step in range(max(1, int(max_tool_steps))):
+            tool_prompt = (
+                "Decide ONE tool call as JSON: {\"name\": string, \"args\": object}. "
+                "Allowed tools: SearchKB, GetPolicy, CreateTicket, None.\n"
+                "Rules: If you already have enough evidence to answer, choose name=\"None\".\n\n"
+                f"User query: {question}\n"
+                + (f"Previous tool output (JSON): {last_tool_json}\n" if last_tool_json else "")
             )
-            tool_trace.append(ToolResult(name=name, args=call_args, output=out))
-        else:
+            tool_out = _generate(self._tool_model, self._tool_tok, tool_prompt, max_new_tokens=128)
+            tool_call = _extract_json(tool_out) or {"name": "SearchKB", "args": {"query": question, "top_k": top_k}}
+
+            name = tool_call.get("name") or tool_call.get("tool") or "SearchKB"
+            call_args = tool_call.get("args") or {}
+
+            if name == "None":
+                break
+            if name == "GetPolicy":
+                section_id = call_args.get("section_id", "")
+                out = GetPolicy(section_id=section_id, policy_db=self._policy_db)
+                tr = ToolResult(name=name, args={"section_id": section_id}, output=out)
+                tool_trace.append(tr)
+                last_tool_json = json.dumps(out, ensure_ascii=False)[:2000]
+                continue
+            if name == "CreateTicket":
+                out = CreateTicket(
+                    summary=str(call_args.get("summary", ""))[:240],
+                    category=str(call_args.get("category", "support")),
+                    severity=str(call_args.get("severity", "medium")),
+                )
+                tr = ToolResult(name=name, args=call_args, output=out)
+                tool_trace.append(tr)
+                last_tool_json = json.dumps(out, ensure_ascii=False)[:2000]
+                continue
+
             q = call_args.get("query") or question
             k = int(call_args.get("top_k") or top_k)
             out = SearchKB(query=q, faiss_index=self._faiss_index, doc_map=self._doc_map, encoder=self._encoder, top_k=k)
@@ -216,18 +247,29 @@ class EcoSupportCopilot:
                 passages = [passages[i] for i in order]
                 out["passages"] = passages
 
-            tool_trace.append(ToolResult(name="SearchKB", args={"query": q, "top_k": k}, output=out))
+            tr = ToolResult(name="SearchKB", args={"query": q, "top_k": k}, output=out)
+            tool_trace.append(tr)
+            last_tool_json = json.dumps({"passages": out.get("passages", [])[:2]}, ensure_ascii=False)[:2000]
 
         evidence_lines: List[str] = []
-        retrieved_doc_ids: List[str] = []
+        retrieved_citations: List[str] = []
         for tr in tool_trace:
             if tr.name == "SearchKB":
                 for p in tr.output.get("passages", []):
                     doc_id = p.get("doc_id")
                     if doc_id:
-                        retrieved_doc_ids.append(str(doc_id))
+                        retrieved_citations.append(
+                            _format_doc_span_citation(
+                                str(doc_id),
+                                int(p.get("span_start", 0) or 0),
+                                int(p.get("span_end", 0) or 0),
+                            )
+                        )
                     text = (p.get("text") or "").strip().replace("\n", " ")
-                    evidence_lines.append(f"[{doc_id}] {text}")
+                    span_start = int(p.get("span_start", 0) or 0)
+                    span_end = int(p.get("span_end", 0) or 0)
+                    cite = _format_doc_span_citation(str(doc_id), span_start, span_end) if doc_id else ""
+                    evidence_lines.append(f"{cite} {text}".strip())
             elif tr.name == "GetPolicy":
                 evidence_lines.append(f"[POLICY:{tr.args.get('section_id')}] {tr.output.get('policy_text','')}")
             elif tr.name == "CreateTicket":
@@ -236,13 +278,15 @@ class EcoSupportCopilot:
         evidence = "\n".join(evidence_lines)[:12000]
         gen_prompt = (
             "System:\nYou are EcoSupport-Copilot. Answer using evidence from the KB/policies/tools. "
-            "Always cite document ids in square brackets like [DOC_123]. If you cannot answer from evidence, escalate.\n\n"
+            "Always cite evidence as [DOC_123@start-end] (doc id + span). "
+            "Policy citations may use [POLICY:section_id]. "
+            "If you cannot answer from evidence, escalate.\n\n"
             f"Evidence:\n{evidence}\n\n"
             f"User:\n{question}\n\n"
             "Assistant:\n"
         )
         answer = _generate(self._gen_model, self._gen_tok, gen_prompt, max_new_tokens=max_new_tokens)
-        answer = _ensure_doc_citations(answer, retrieved_doc_ids)
+        answer = _ensure_doc_citations(answer, retrieved_citations)
 
         trace_json = [{"name": tr.name, "args": tr.args, "output": tr.output} for tr in tool_trace]
         return answer, trace_json

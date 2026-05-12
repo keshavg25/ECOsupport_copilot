@@ -143,15 +143,25 @@ def _generate(model: Any, tok: Any, prompt: str, max_new_tokens: int = 256) -> s
     return decoded.strip()
 
 
-def _ensure_doc_citations(answer: str, retrieved_doc_ids: List[str], max_ids: int = 3) -> str:
+def _format_doc_span_citation(doc_id: str, span_start: int, span_end: int) -> str:
+    s = int(span_start or 0)
+    e = int(span_end or 0)
+    if s <= 0 and e <= 0:
+        return f"[{doc_id}]"
+    if e < s:
+        s, e = e, s
+    return f"[{doc_id}@{s}-{e}]"
+
+
+def _ensure_doc_citations(answer: str, retrieved_citations: List[str], max_ids: int = 3) -> str:
     ans = (answer or "").strip()
-    if re.search(r"\[DOC_[0-9]+\]", ans):
+    if re.search(r"\[DOC_[0-9]+(?:@[0-9]+-[0-9]+)?\]", ans):
         return ans
-    doc_ids = [d for d in retrieved_doc_ids if isinstance(d, str) and d.startswith("DOC_")]
-    doc_ids = list(dict.fromkeys(doc_ids))[:max_ids]
-    if not doc_ids:
+    cites = [c for c in retrieved_citations if isinstance(c, str) and c.startswith("[DOC_")]
+    cites = list(dict.fromkeys(cites))[:max_ids]
+    if not cites:
         return ans
-    sources = " ".join(f"[{d}]" for d in doc_ids)
+    sources = " ".join(cites)
     if ans:
         return f"{ans}\n\nSources: {sources}".strip()
     return f"Sources: {sources}".strip()
@@ -261,15 +271,24 @@ def main() -> None:
 
     # 3) Build evidence block
     evidence_lines: List[str] = []
-    retrieved_doc_ids: List[str] = []
+    retrieved_citations: List[str] = []
     for tr in tool_trace:
         if tr.name == "SearchKB":
             for p in tr.output.get("passages", []):
                 doc_id = p.get("doc_id")
                 if doc_id:
-                    retrieved_doc_ids.append(str(doc_id))
+                    retrieved_citations.append(
+                        _format_doc_span_citation(
+                            str(doc_id),
+                            int(p.get("span_start", 0) or 0),
+                            int(p.get("span_end", 0) or 0),
+                        )
+                    )
                 text = (p.get("text") or "").strip().replace("\n", " ")
-                evidence_lines.append(f"[{doc_id}] {text}")
+                span_start = int(p.get("span_start", 0) or 0)
+                span_end = int(p.get("span_end", 0) or 0)
+                cite = _format_doc_span_citation(str(doc_id), span_start, span_end) if doc_id else ""
+                evidence_lines.append(f"{cite} {text}".strip())
         elif tr.name == "GetPolicy":
             evidence_lines.append(f"[POLICY:{tr.args.get('section_id')}] {tr.output.get('policy_text','')}")
         elif tr.name == "CreateTicket":
@@ -280,13 +299,15 @@ def main() -> None:
     # 4) Generate final answer
     gen_prompt = (
         "System:\nYou are EcoSupport-Copilot. Answer using evidence from the KB/policies/tools. "
-        "Always cite document ids in square brackets like [DOC_123]. If you cannot answer from evidence, escalate.\n\n"
+        "Always cite evidence as [DOC_123@start-end] (doc id + span). "
+        "Policy citations may use [POLICY:section_id]. "
+        "If you cannot answer from evidence, escalate.\n\n"
         f"Evidence:\n{evidence}\n\n"
         f"User:\n{args.question}\n\n"
         "Assistant:\n"
     )
     answer = _generate(gen_model, gen_tok, gen_prompt, max_new_tokens=args.max_new_tokens)
-    answer = _ensure_doc_citations(answer, retrieved_doc_ids)
+    answer = _ensure_doc_citations(answer, retrieved_citations)
 
     # 5) Emit response + tool trace JSON
     print("\n=== ANSWER ===\n")

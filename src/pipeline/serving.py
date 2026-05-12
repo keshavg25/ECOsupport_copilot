@@ -17,6 +17,7 @@ if _ROOT not in sys.path:
 
 
 from src.pipeline.copilot import EcoSupportCopilot
+from src.evaluation.metrics import compute_all
 
 
 class ChatRequest(BaseModel):
@@ -28,6 +29,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     tool_trace: List[Dict[str, Any]]
+    metrics: Dict[str, Any]
 
 
 def _env(name: str, default: str) -> str:
@@ -106,6 +108,9 @@ def ui() -> str:
         <h2>Tool trace</h2>
         <pre id=\"trace\"></pre>
 
+        <h2>Metrics</h2>
+        <pre id=\"metrics\"></pre>
+
         <p>API docs: <a href=\"/docs\">/docs</a></p>    
 
         <script>
@@ -113,6 +118,7 @@ def ui() -> str:
             const statusEl = document.getElementById('status');
             const answerEl = document.getElementById('answer');
             const traceEl = document.getElementById('trace');
+            const metricsEl = document.getElementById('metrics');
             const sendBtn = document.getElementById('send');
 
             function setBusy(isBusy) {
@@ -129,6 +135,7 @@ def ui() -> str:
 
                 answerEl.textContent = '';
                 traceEl.textContent = '';
+                metricsEl.textContent = '';
                 setBusy(true);
 
                 try {
@@ -145,6 +152,7 @@ def ui() -> str:
 
                     answerEl.textContent = data.answer || '';
                     traceEl.textContent = JSON.stringify(data.tool_trace || [], null, 2);
+                    metricsEl.textContent = JSON.stringify(data.metrics || {}, null, 2);
                 } catch (err) {
                     answerEl.textContent = 'Error: ' + (err?.message || String(err));
                 } finally {
@@ -161,4 +169,5 @@ def chat(req: ChatRequest) -> ChatResponse:
     if _copilot is None:
         raise RuntimeError("Service not initialized")
     answer, trace = _copilot.answer(req.question, top_k=req.top_k, max_new_tokens=req.max_new_tokens)
-    return ChatResponse(answer=answer, tool_trace=trace)
+    metrics = compute_all(answer, trace)
+    return ChatResponse(answer=answer, tool_trace=trace, metrics=metrics)
